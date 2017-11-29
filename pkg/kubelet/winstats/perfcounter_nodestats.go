@@ -26,6 +26,7 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+	"encoding/binary"
 
 	"github.com/golang/glog"
 	cadvisorapi "github.com/google/cadvisor/info/v1"
@@ -33,8 +34,8 @@ import (
 )
 
 var (
-	modkernel32                            = syscall.NewLazyDLL("kernel32.dll")
-	procGetPhysicallyInstalledSystemMemory = modkernel32.NewProc("GetPhysicallyInstalledSystemMemory")
+	modkernel32              = syscall.NewLazyDLL("kernel32.dll")
+	procGlobalMemoryStatusEx = modkernel32.NewProc("GlobalMemoryStatusEx")
 )
 
 // NewPerfCounterClient creates a client using perf counters
@@ -173,10 +174,14 @@ func getPhysicallyInstalledSystemMemoryBytes() (uint64, error) {
 }
 
 func getPhysicallyInstalledSystemMemory(totalMemoryInKilobytes *uint64) bool {
-	ret, _, _ := syscall.Syscall(procGetPhysicallyInstalledSystemMemory.Addr(), 1,
-		uintptr(unsafe.Pointer(totalMemoryInKilobytes)),
-		0,
-		0)
+	var memoryStatusEx [64]byte
+	binary.LittleEndian.PutUint32(memoryStatusEx[:], 64)
+	p := uintptr(unsafe.Pointer(&memoryStatusEx[0]))
+	
+	ret, _, _ := syscall.Syscall(procGlobalMemoryStatusEx.Addr(), 1, p, 0,	0)
+	// Fetch avilable physical memory from MEMORYSTATUSEX.ullTotalPhys
+	// https://msdn.microsoft.com/en-us/library/windows/desktop/aa366770
+	*totalMemoryInKilobytes = binary.LittleEndian.Uint64(memoryStatusEx[8:])
 
 	return ret != 0
 }
