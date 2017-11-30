@@ -26,7 +26,6 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
-	"encoding/binary"
 
 	"github.com/golang/glog"
 	cadvisorapi "github.com/google/cadvisor/info/v1"
@@ -173,15 +172,25 @@ func getPhysicallyInstalledSystemMemoryBytes() (uint64, error) {
 	return physicalMemoryKiloBytes * 1024, nil // convert kilobytes to bytes
 }
 
+type MEMORYSTATUSEX struct {
+  dwLength uint32
+  dwMemoryLoad uint32
+  ullTotalPhys uint64
+  ullAvailPhys uint64
+  ullTotalPageFile uint64
+  ullAvailPageFile uint64
+  ullTotalVirtual uint64
+  ullAvailVirtual uint64
+  ullAvailExtendedVirtual uint64
+}
+
 func getPhysicallyInstalledSystemMemory(totalMemoryInKilobytes *uint64) bool {
-	var memoryStatusEx [64]byte
-	binary.LittleEndian.PutUint32(memoryStatusEx[:], 64)
-	p := uintptr(unsafe.Pointer(&memoryStatusEx[0]))
+	var memoryStatusEx MEMORYSTATUSEX
+	memoryStatusEx.dwLength = uint32(unsafe.Sizeof(memoryStatusEx))
+	p := uintptr(unsafe.Pointer(&memoryStatusEx))
 	
 	ret, _, _ := syscall.Syscall(procGlobalMemoryStatusEx.Addr(), 1, p, 0,	0)
-	// Fetch avilable physical memory from MEMORYSTATUSEX.ullTotalPhys
-	// https://msdn.microsoft.com/en-us/library/windows/desktop/aa366770
-	*totalMemoryInKilobytes = binary.LittleEndian.Uint64(memoryStatusEx[8:])
-
+	
+	*totalMemoryInKilobytes = memoryStatusEx.ullTotalPhys
 	return ret != 0
 }
